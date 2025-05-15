@@ -23,7 +23,7 @@ if (isset($_SESSION['user_id'])) {
         $carrito_id = $carrito['carrito_id'];
         
         // Obtener items del carrito
-        $query_items = "SELECT ic.*, p.titulo, p.stock, 
+        $query_items = "SELECT ic.*, p.titulo, p.precio, p.stock, 
                         (SELECT url_imagen FROM imagen_producto WHERE producto_id = ic.producto_id AND es_principal = 1 LIMIT 1) as imagen
                         FROM item_carrito ic
                         JOIN producto p ON ic.producto_id = p.producto_id
@@ -41,7 +41,7 @@ if (isset($_SESSION['user_id'])) {
                 $_SESSION['carrito'][] = [
                     'producto_id' => $item['producto_id'],
                     'titulo' => $item['titulo'],
-                    'precio' => $item['precio_unitario'],
+                    'precio' => $item['precio'],
                     'cantidad' => $cantidad,
                     'stock' => $item['stock'],
                     'imagen' => $item['imagen']
@@ -53,17 +53,29 @@ if (isset($_SESSION['user_id'])) {
 
 // Calcular total
 $total = 0;
-foreach ($_SESSION['carrito'] as $item) {
-    $total += $item['precio'] * $item['cantidad'];
-}
+
 
 // Actualizar información de imágenes si no están presentes
 foreach ($_SESSION['carrito'] as $key => $item) {
-    if (!isset($item['imagen'])) {
+    if (!isset($item['imagen']) || !isset($item['precio']) || $item['precio'] == 0) {
         $producto_id = $item['producto_id'];
+        
+        // Obtener precio e imagen
+        $query_producto = "SELECT precio FROM producto WHERE producto_id = '$producto_id'";
+        $result_producto = mysqli_query($link, $query_producto);
+        
+        if (mysqli_num_rows($result_producto) > 0) {
+            $producto = mysqli_fetch_assoc($result_producto);
+            // Actualizar precio si es cero
+            if (!isset($item['precio']) || $item['precio'] == 0) {
+                $_SESSION['carrito'][$key]['precio'] = $producto['precio'];
+            }
+        }
+        
+        // Obtener imagen
         $query_imagen = "SELECT url_imagen FROM imagen_producto WHERE producto_id = '$producto_id' AND es_principal = 1 LIMIT 1";
         $result_imagen = mysqli_query($link, $query_imagen);
-        
+
         if (mysqli_num_rows($result_imagen) > 0) {
             $imagen = mysqli_fetch_assoc($result_imagen);
             $_SESSION['carrito'][$key]['imagen'] = $imagen['url_imagen'];
@@ -72,6 +84,10 @@ foreach ($_SESSION['carrito'] as $key => $item) {
         }
     }
 }
+foreach ($_SESSION['carrito'] as $item) {
+    $total += $item['precio'] * $item['cantidad'];
+}
+
 ?>
 <!DOCTYPE html>
 <html>
