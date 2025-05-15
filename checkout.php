@@ -520,6 +520,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                     <?php endforeach; ?>
                 </div>
+		<!-- Cupón de descuento -->
+		<div class="form-section">
+    		<h3>Cupón de Descuento</h3>
+    		<div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        		<input type="text" id="codigo_cupon" placeholder="Ingresa tu código" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+       			<button type="button" id="aplicar_cupon" class="btn">Aplicar</button>
+		</div>
+		<div id="cupon_mensaje" style="margin-top: 10px; display: none;"></div>
+		</div>
 
                 <div class="cart-summary">
                     <div class="summary-row">
@@ -554,29 +563,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script>
         function selectAddress(id) {
-            // Marcar radio button
             document.getElementById('dir_' + id).checked = true;
             
-            // Mostrar/ocultar formulario de nueva dirección
             document.getElementById('nuevaDireccionForm').style.display = (id === 'nueva') ? 'block' : 'none';
             
-            // Resaltar seleccionado
             const boxes = document.querySelectorAll('.address-box');
             boxes.forEach(box => box.classList.remove('selected'));
             document.querySelector('input[name="direccion_id"]:checked').closest('.address-box').classList.add('selected');
         }
         
         function selectPayment(id) {
-            // Marcar radio button
             document.getElementById('pago_' + id).checked = true;
             
-            // Resaltar seleccionado
             const methods = document.querySelectorAll('.payment-method');
             methods.forEach(method => method.classList.remove('selected'));
             document.querySelector('input[name="metodo_pago"]:checked').closest('.payment-method').classList.add('selected');
         }
         
-        // Inicializar selecciones
         document.addEventListener('DOMContentLoaded', function() {
             // Inicializar dirección seleccionada
             const selectedAddress = document.querySelector('input[name="direccion_id"]:checked');
@@ -584,7 +587,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 selectedAddress.closest('.address-box').classList.add('selected');
             }
             
-            // Inicializar método de pago si hay uno seleccionado
             const selectedPayment = document.querySelector('input[name="metodo_pago"]:checked');
             if (selectedPayment) {
                 selectedPayment.closest('.payment-method').classList.add('selected');

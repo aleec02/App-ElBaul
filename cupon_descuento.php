@@ -1,40 +1,86 @@
 <?php
-$dbname = 'elbaul';
-$dbuser = 'aleec02';
-$dbpass = '1';
-$dbhost = '13.64.149.250';
+session_start();
 
-$link = mysqli_connect($dbhost, $dbuser, $dbpass) or die("No se pudo conectar a '$dbhost'");
-mysqli_select_db($link, $dbname) or die("No se pudo abrir la base de datos '$dbname'");
+require_once 'includes/db_connection.php';
 
-echo "<h1>Cupones de Descuento</h1>";
-echo "<p><a href='index.php'>Volver al inicio</a></p>";
-echo "<table border='1'>";
-echo "<tr><th>ID Cupón</th><th>Código</th><th>Descuento %</th><th>Descuento Fijo</th><th>Vigencia</th><th>Usos</th><th>Estado</th></tr>";
-
-$test_query = "SELECT * FROM cupon_descuento";
-$result = mysqli_query($link, $test_query);
-$cupCnt = 0;
-
-while($cup = mysqli_fetch_array($result)) {
-    $cupCnt++;
-    echo "<tr>";
-    echo "<td>".$cup['cupon_id']."</td>";
-    echo "<td>".$cup['codigo']."</td>";
-    echo "<td>".($cup['descuento_porcentaje'] ? $cup['descuento_porcentaje'].'%' : '-')."</td>";
-    echo "<td>".($cup['descuento_monto_fijo'] ? 'S/. '.$cup['descuento_monto_fijo'] : '-')."</td>";
-    echo "<td>".$cup['fecha_inicio']." al ".$cup['fecha_expiracion']."</td>";
-    echo "<td>".$cup['usos_actuales']." / ".($cup['usos_maximos'] ? $cup['usos_maximos'] : 'Ilimitado')."</td>";
-    echo "<td>".($cup['activo'] ? 'Activo' : 'Inactivo')."</td>";
-    echo "</tr>";
+if (!isset($_SESSION['user_id'])) {
+    $response = [
+        'success' => false,
+        'message' => 'Debes iniciar sesión para aplicar cupones'
+    ];
+    echo json_encode($response);
+    exit();
 }
 
-echo "</table>";
-
-if (!$cupCnt) {
-    echo "No hay cupones registrados<br />\n";
-} else {
-    echo "Hay $cupCnt cupones registrados<br />\n";
+if (!isset($_POST['codigo']) || empty($_POST['codigo'])) {
+    $response = [
+        'success' => false,
+        'message' => 'Código de cupón inválido'
+    ];
+    echo json_encode($response);
+    exit();
 }
-mysqli_close($link);
+
+$codigo = strtoupper(mysqli_real_escape_string($link, $_POST['codigo']));
+$usuario_id = $_SESSION['user_id'];
+$fecha_actual = date('Y-m-d');
+
+$query = "SELECT * FROM cupon_descuento 
+         WHERE codigo = '$codigo' 
+         AND fecha_inicio <= '$fecha_actual' 
+         AND fecha_expiracion >= '$fecha_actual' 
+         AND activo = 1";
+$result = mysqli_query($link, $query);
+
+if (mysqli_num_rows($result) == 0) {
+    $response = [
+        'success' => false,
+        'message' => 'El cupón no existe o ha expirado'
+    ];
+    echo json_encode($response);
+    exit();
+}
+
+$cupon = mysqli_fetch_assoc($result);
+
+if (!is_null($cupon['usos_maximos']) && $cupon['usos_actuales'] >= $cupon['usos_maximos']) {
+    $response = [
+        'success' => false,
+        'message' => 'Este cupón ya ha alcanzado su límite de usos'
+    ];
+    echo json_encode($response);
+    exit();
+}
+$_SESSION['cupon'] = [
+    'cupon_id' => $cupon['cupon_id'],
+    'codigo' => $cupon['codigo'],
+    'descuento_porcentaje' => $cupon['descuento_porcentaje'],
+    'descuento_monto_fijo' => $cupon['descuento_monto_fijo']
+];
+
+$subtotal = isset($_POST['subtotal']) ? floatval($_POST['subtotal']) : 0;
+$descuento = 0;
+
+if (!is_null($cupon['descuento_porcentaje'])) {
+    $descuento = $subtotal * ($cupon['descuento_porcentaje'] / 100);
+} elseif (!is_null($cupon['descuento_monto_fijo'])) {
+    $descuento = $cupon['descuento_monto_fijo'];
+    if ($descuento > $subtotal) {
+        $descuento = $subtotal; // El descuento no puede ser mayor que el subtotal
+    }
+}
+
+$nuevo_subtotal = $subtotal - $descuento;
+
+$response = [
+    'success' => true,
+    'message' => 'Cupón aplicado correctamente',
+    'descuento' => $descuento,
+    'nuevo_subtotal' => $nuevo_subtotal,
+    'tipo_descuento' => !is_null($cupon['descuento_porcentaje']) ? 'porcentaje' : 'monto_fijo',
+    'valor_descuento' => !is_null($cupon['descuento_porcentaje']) ? $cupon['descuento_porcentaje'] : $cupon['descuento_monto_fijo']
+];
+
+echo json_encode($response);
+exit();
 ?>
