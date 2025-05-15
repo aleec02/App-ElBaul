@@ -25,8 +25,16 @@ $result_user = mysqli_query($link, $query_user);
 $usuario = mysqli_fetch_assoc($result_user);
 
 // Obtener direcciones del usuario
-$query_direcciones = "SELECT * FROM direccion WHERE usuario_id = '$usuario_id' ORDER BY es_principal DESC, fecha_creacion DESC";
-$result_direcciones = mysqli_query($link, $query_direcciones);
+$direcciones_existentes = false;
+$result_direcciones = false;
+
+// Verificar si existe la tabla direccion en la base de datos
+$check_table = mysqli_query($link, "SHOW TABLES LIKE 'direccion'");
+if (mysqli_num_rows($check_table) > 0) {
+    $query_direcciones = "SELECT * FROM direccion WHERE usuario_id = '$usuario_id' ORDER BY es_principal DESC, fecha_creacion DESC";
+    $result_direcciones = mysqli_query($link, $query_direcciones);
+    $direcciones_existentes = mysqli_num_rows($result_direcciones) > 0;
+}
 
 // Calcular totales
 $subtotal = 0;
@@ -42,6 +50,7 @@ $iva = $subtotal * 0.18;
 $total = $subtotal + $iva;
 
 // Procesar el envío del formulario
+$errores = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nombre = mysqli_real_escape_string($link, $_POST['nombre']);
     $apellido = mysqli_real_escape_string($link, $_POST['apellido']);
@@ -49,106 +58,134 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $telefono = mysqli_real_escape_string($link, $_POST['telefono']);
     $direccion_id = isset($_POST['direccion_id']) ? mysqli_real_escape_string($link, $_POST['direccion_id']) : '';
     $metodo_pago = mysqli_real_escape_string($link, $_POST['metodo_pago']);
-    $notas = mysqli_real_escape_string($link, $_POST['notas']);
+    $notas = isset($_POST['notas']) ? mysqli_real_escape_string($link, $_POST['notas']) : '';
 
     // Validación de datos
     $errores = [];
-    
+
     if (empty($nombre) || empty($apellido) || empty($email) || empty($telefono)) {
         $errores[] = "Todos los campos son obligatorios";
     }
-    
+
     if (empty($direccion_id) && $direccion_id != 'nueva') {
         $errores[] = "Debes seleccionar una dirección de envío";
     }
-    
+
     if (empty($metodo_pago)) {
         $errores[] = "Debes seleccionar un método de pago";
     }
-    
+
     // Si se seleccionó "nueva dirección", validar los campos
     if ($direccion_id == 'nueva') {
         $calle = mysqli_real_escape_string($link, $_POST['calle']);
         $ciudad = mysqli_real_escape_string($link, $_POST['ciudad']);
         $provincia = mysqli_real_escape_string($link, $_POST['provincia']);
         $codigo_postal = mysqli_real_escape_string($link, $_POST['codigo_postal']);
-        $referencia = mysqli_real_escape_string($link, $_POST['referencia']);
-        
+        $referencia = isset($_POST['referencia']) ? mysqli_real_escape_string($link, $_POST['referencia']) : '';
+
         if (empty($calle) || empty($ciudad) || empty($provincia) || empty($codigo_postal)) {
             $errores[] = "Todos los campos de la dirección son obligatorios";
         }
     }
-    
+
     // Si no hay errores, procesar la orden
     if (empty($errores)) {
         // Generar ID de orden
         $orden_id = 'OR' . sprintf('%06d', mt_rand(1, 999999));
         
-        // Si se seleccionó "nueva dirección", crear la dirección
+        // String para la dirección completa
+        $direccion_completa = "";
+
+        // Si se seleccionó "nueva dirección", crear la dirección si existe la tabla
         if ($direccion_id == 'nueva') {
-            $direccion_id = 'DIR' . sprintf('%06d', mt_rand(1, 999999));
-            $es_principal = mysqli_num_rows($result_direcciones) == 0 ? 1 : 0;
+            // Verificar si existe la tabla direccion
+            if (mysqli_num_rows($check_table) > 0) {
+                $direccion_id = 'DIR' . sprintf('%06d', mt_rand(1, 999999));
+                $es_principal = !$direcciones_existentes ? 1 : 0;
+
+                $query_direccion = "INSERT INTO direccion (direccion_id, usuario_id, calle, ciudad, provincia,
+                                    codigo_postal, referencia, es_principal, fecha_creacion)
+                                    VALUES ('$direccion_id', '$usuario_id', '$calle', '$ciudad', '$provincia',
+                                    '$codigo_postal', '$referencia', $es_principal, NOW())";
+                mysqli_query($link, $query_direccion);
+            }
             
-            $query_direccion = "INSERT INTO direccion (direccion_id, usuario_id, calle, ciudad, provincia, 
-                                codigo_postal, referencia, es_principal, fecha_creacion) 
-                                VALUES ('$direccion_id', '$usuario_id', '$calle', '$ciudad', '$provincia', 
-                                '$codigo_postal', '$referencia', $es_principal, NOW())";
-            mysqli_query($link, $query_direccion);
+            // Formatear la dirección como texto para guardarla en la orden
+            $direccion_completa = "$calle, $ciudad, $provincia, $codigo_postal";
+            if (!empty($referencia)) {
+                $direccion_completa .= " (Referencia: $referencia)";
+            }
+        } else if ($direcciones_existentes) {
+            // Obtener la dirección seleccionada
+            $query_dir = "SELECT * FROM direccion WHERE direccion_id = '$direccion_id' AND usuario_id = '$usuario_id'";
+            $result_dir = mysqli_query($link, $query_dir);
+            
+            if (mysqli_num_rows($result_dir) > 0) {
+                $dir = mysqli_fetch_assoc($result_dir);
+                $direccion_completa = "{$dir['calle']}, {$dir['ciudad']}, {$dir['provincia']}, {$dir['codigo_postal']}";
+                if (!empty($dir['referencia'])) {
+                    $direccion_completa .= " (Referencia: {$dir['referencia']})";
+                }
+            }
         }
-        
+
         // Iniciar transacción
         mysqli_begin_transaction($link);
-        
+
         try {
             // Crear la orden
-            $query_orden = "INSERT INTO orden (orden_id, usuario_id, fecha_orden, estado, direccion_id, 
-                            metodo_pago, total, subtotal, impuestos, notas) 
-                            VALUES ('$orden_id', '$usuario_id', NOW(), 'pendiente', '$direccion_id', 
-                            '$metodo_pago', $total, $subtotal, $iva, '$notas')";
+            $query_orden = "INSERT INTO orden (orden_id, usuario_id, fecha_orden, total, estado, metodo_pago, direccion_envio)
+                           VALUES ('$orden_id', '$usuario_id', NOW(), $total, 'pendiente', '$metodo_pago', '$direccion_completa')";
             mysqli_query($link, $query_orden) or throw new Exception("Error al crear orden: " . mysqli_error($link));
-            
+
             // Insertar items de la orden
             foreach ($_SESSION['carrito'] as $item) {
                 $producto_id = $item['producto_id'];
                 $cantidad = $item['cantidad'];
                 $precio = $item['precio'];
-                
-                $query_item = "INSERT INTO item_orden (orden_id, producto_id, cantidad, precio_unitario) 
-                              VALUES ('$orden_id', '$producto_id', $cantidad, $precio)";
+                $subtotal_item = $precio * $cantidad;
+
+                $item_orden_id = 'IO' . sprintf('%06d', mt_rand(1, 999999));
+                $query_item = "INSERT INTO item_orden (item_orden_id, orden_id, producto_id, cantidad, precio_unitario, subtotal)
+                              VALUES ('$item_orden_id', '$orden_id', '$producto_id', $cantidad, $precio, $subtotal_item)";
                 mysqli_query($link, $query_item) or throw new Exception("Error al crear item: " . mysqli_error($link));
-                
+
                 // Actualizar stock del producto
                 $query_stock = "UPDATE producto SET stock = stock - $cantidad WHERE producto_id = '$producto_id'";
                 mysqli_query($link, $query_stock) or throw new Exception("Error al actualizar stock: " . mysqli_error($link));
-                
-                // Actualizar inventario
-                $query_inventario = "UPDATE inventario SET cantidad_disponible = cantidad_disponible - $cantidad, 
-                                   fecha_actualizacion = NOW() WHERE producto_id = '$producto_id'";
-                mysqli_query($link, $query_inventario) or throw new Exception("Error al actualizar inventario: " . mysqli_error($link));
+
+                // Comprobar si existe la tabla inventario
+                $check_inventario = mysqli_query($link, "SHOW TABLES LIKE 'inventario'");
+                if (mysqli_num_rows($check_inventario) > 0) {
+                    // Actualizar inventario si existe
+                    $query_inventario = "UPDATE inventario SET cantidad_disponible = cantidad_disponible - $cantidad,
+                                       fecha_actualizacion = NOW() WHERE producto_id = '$producto_id'";
+                    mysqli_query($link, $query_inventario);
+                }
             }
-            
+
             // Vaciar el carrito de la sesión
             $_SESSION['carrito'] = [];
-            
+
             // Si el usuario tiene un carrito en la BD, vaciar los items
             $query_carrito = "SELECT * FROM carrito WHERE usuario_id = '$usuario_id'";
             $result_carrito = mysqli_query($link, $query_carrito);
-            
+
             if (mysqli_num_rows($result_carrito) > 0) {
                 $carrito = mysqli_fetch_assoc($result_carrito);
                 $carrito_id = $carrito['carrito_id'];
-                
+
                 $query_vaciar = "DELETE FROM item_carrito WHERE carrito_id = '$carrito_id'";
                 mysqli_query($link, $query_vaciar) or throw new Exception("Error al vaciar carrito: " . mysqli_error($link));
             }
-            
+
             // Confirmar la transacción
             mysqli_commit($link);
-            
+
             // Redireccionar a la página de confirmación
             header("Location: orden_confirmacion.php?id=$orden_id");
             exit();
-            
+
         } catch (Exception $e) {
             // Revertir la transacción en caso de error
             mysqli_rollback($link);
@@ -322,7 +359,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <main class="container">
         <h1>Finalizar Compra</h1>
-        
+
         <?php if (!empty($errores)): ?>
             <div class="alert-error">
                 <ul>
@@ -332,13 +369,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </ul>
             </div>
         <?php endif; ?>
-        
+
         <?php if (isset($error_message)): ?>
             <div class="alert-error">
                 <p><?php echo $error_message; ?></p>
             </div>
         <?php endif; ?>
-        
+
         <div class="checkout-container">
             <div class="checkout-form">
                 <form method="post" action="">
@@ -363,12 +400,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="form-section">
                         <h2>Dirección de Envío</h2>
-                        
+
                         <div class="address-options">
-                            <?php if (mysqli_num_rows($result_direcciones) > 0): ?>
+                            <?php if ($direcciones_existentes): ?>
                                 <?php while ($direccion = mysqli_fetch_assoc($result_direcciones)): ?>
                                     <div class="address-box" onclick="selectAddress('<?php echo $direccion['direccion_id']; ?>')">
                                         <input type="radio" name="direccion_id" id="dir_<?php echo $direccion['direccion_id']; ?>" value="<?php echo $direccion['direccion_id']; ?>" <?php echo $direccion['es_principal'] ? 'checked' : ''; ?>>
@@ -386,16 +423,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     </div>
                                 <?php endwhile; ?>
                             <?php endif; ?>
-                            
+
                             <div class="address-box" onclick="selectAddress('nueva')">
-                                <input type="radio" name="direccion_id" id="dir_nueva" value="nueva" <?php echo mysqli_num_rows($result_direcciones) == 0 ? 'checked' : ''; ?>>
+                                <input type="radio" name="direccion_id" id="dir_nueva" value="nueva" <?php echo !$direcciones_existentes ? 'checked' : ''; ?>>
                                 <label for="dir_nueva">
                                     <strong>Usar una nueva dirección</strong>
                                 </label>
                             </div>
                         </div>
-                        
-                        <div id="nuevaDireccionForm" class="new-address-form" style="display: <?php echo (mysqli_num_rows($result_direcciones) == 0 || (isset($_POST['direccion_id']) && $_POST['direccion_id'] == 'nueva')) ? 'block' : 'none'; ?>">
+
+                        <div id="nuevaDireccionForm" class="new-address-form" style="display: <?php echo (!$direcciones_existentes || (isset($_POST['direccion_id']) && $_POST['direccion_id'] == 'nueva')) ? 'block' : 'none'; ?>">
                             <div class="form-grid">
                                 <div class="form-group full-width">
                                     <label for="calle">Calle y Número:</label>
@@ -411,4 +448,148 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </div>
                                 <div class="form-group">
                                     <label for="codigo_postal">Código Postal:</label>
-                                    <input type="text" id="codigo_postal" name="codigo_postal" value="<?php echo isset($_POST['codigo_postal']) ? $_POST['codigo_pos
+                                    <input type="text" id="codigo_postal" name="codigo_postal" value="<?php echo isset($_POST['codigo_postal']) ? $_POST['codigo_postal'] : ''; ?>">
+                                </div>
+                                <div class="form-group full-width">
+                                    <label for="referencia">Referencia (opcional):</label>
+                                    <input type="text" id="referencia" name="referencia" value="<?php echo isset($_POST['referencia']) ? $_POST['referencia'] : ''; ?>">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h2>Método de Pago</h2>
+
+                        <div class="payment-methods">
+                            <div class="payment-method" onclick="selectPayment('transferencia')">
+                                <input type="radio" name="metodo_pago" id="pago_transferencia" value="transferencia" required>
+                                <label for="pago_transferencia">
+                                    <strong>Transferencia Bancaria</strong><br>
+                                    Transferencia a nuestra cuenta bancaria. Procesaremos tu pedido al recibir el pago.
+                                </label>
+                            </div>
+
+                            <div class="payment-method" onclick="selectPayment('tarjeta_credito')">
+                                <input type="radio" name="metodo_pago" id="pago_tarjeta" value="tarjeta_credito">
+                                <label for="pago_tarjeta">
+                                    <strong>Tarjeta de Crédito/Débito</strong><br>
+                                    Pago seguro con tarjeta a través de nuestra pasarela de pago.
+                                </label>
+                            </div>
+
+                            <div class="payment-method" onclick="selectPayment('efectivo')">
+                                <input type="radio" name="metodo_pago" id="pago_efectivo" value="efectivo">
+                                <label for="pago_efectivo">
+                                    <strong>Pago Contra Entrega</strong><br>
+                                    Paga en efectivo cuando recibas tu pedido.
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h2>Notas del Pedido (opcional)</h2>
+                        <textarea name="notas" rows="4" style="width: 100%;"><?php echo isset($_POST['notas']) ? $_POST['notas'] : ''; ?></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-success" style="width: 100%; padding: 15px; font-size: 18px;">Confirmar Pedido</button>
+                </form>
+            </div>
+
+            <div class="checkout-summary">
+                <h2>Resumen del Pedido</h2>
+
+                <div class="cart-items">
+                    <?php foreach ($_SESSION['carrito'] as $item): ?>
+                        <div class="cart-item">
+                            <?php if (isset($item['imagen']) && !empty($item['imagen'])): ?>
+                                <img src="<?php echo $item['imagen']; ?>" alt="<?php echo $item['titulo']; ?>" class="cart-item-image">
+                            <?php else: ?>
+                                <div class="cart-item-image" style="display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
+                                    <span>Sin imagen</span>
+                                </div>
+                            <?php endif; ?>
+
+                            <div class="cart-item-details">
+                                <div class="cart-item-title"><?php echo $item['titulo']; ?></div>
+                                <div class="cart-item-price">
+                                    S/. <?php echo number_format($item['precio'], 2); ?> x <?php echo $item['cantidad']; ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="cart-summary">
+                    <div class="summary-row">
+                        <span>Subtotal:</span>
+                        <span>S/. <?php echo number_format($subtotal, 2); ?></span>
+                    </div>
+
+                    <div class="summary-row">
+                        <span>IGV (18%):</span>
+                        <span>S/. <?php echo number_format($iva, 2); ?></span>
+                    </div>
+
+                    <div class="summary-row">
+                        <span>Envío:</span>
+                        <span>Gratis</span>
+                    </div>
+
+                    <div class="summary-row summary-total">
+                        <span>Total:</span>
+                        <span>S/. <?php echo number_format($total, 2); ?></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; <?php echo date('Y'); ?> ElBaúl - Todos los derechos reservados</p>
+        </div>
+    </footer>
+
+    <script>
+        function selectAddress(id) {
+            // Marcar radio button
+            document.getElementById('dir_' + id).checked = true;
+            
+            // Mostrar/ocultar formulario de nueva dirección
+            document.getElementById('nuevaDireccionForm').style.display = (id === 'nueva') ? 'block' : 'none';
+            
+            // Resaltar seleccionado
+            const boxes = document.querySelectorAll('.address-box');
+            boxes.forEach(box => box.classList.remove('selected'));
+            document.querySelector('input[name="direccion_id"]:checked').closest('.address-box').classList.add('selected');
+        }
+        
+        function selectPayment(id) {
+            // Marcar radio button
+            document.getElementById('pago_' + id).checked = true;
+            
+            // Resaltar seleccionado
+            const methods = document.querySelectorAll('.payment-method');
+            methods.forEach(method => method.classList.remove('selected'));
+            document.querySelector('input[name="metodo_pago"]:checked').closest('.payment-method').classList.add('selected');
+        }
+        
+        // Inicializar selecciones
+        document.addEventListener('DOMContentLoaded', function() {
+            // Inicializar dirección seleccionada
+            const selectedAddress = document.querySelector('input[name="direccion_id"]:checked');
+            if (selectedAddress) {
+                selectedAddress.closest('.address-box').classList.add('selected');
+            }
+            
+            // Inicializar método de pago si hay uno seleccionado
+            const selectedPayment = document.querySelector('input[name="metodo_pago"]:checked');
+            if (selectedPayment) {
+                selectedPayment.closest('.payment-method').classList.add('selected');
+            }
+        });
+    </script>
+</body>
+</html>
