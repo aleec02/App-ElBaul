@@ -18,96 +18,86 @@ $query_user = "SELECT * FROM usuario WHERE usuario_id = '$usuario_id'";
 $result_user = mysqli_query($link, $query_user);
 $usuario = mysqli_fetch_assoc($result_user);
 
-// Procesar el formulario de actualización de perfil
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] == 'update_profile') {
-    $nombre = mysqli_real_escape_string($link, $_POST['nombre']);
-    $apellido = mysqli_real_escape_string($link, $_POST['apellido']);
-    $email = mysqli_real_escape_string($link, $_POST['email']);
-    $telefono = mysqli_real_escape_string($link, $_POST['telefono']);
-    
-    // Validación de datos
-    $errores = [];
-    
-    if (empty($nombre) || empty($apellido) || empty($email)) {
-        $errores[] = "Los campos Nombre, Apellido y Email son obligatorios";
-    }
-    
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errores[] = "El email no es válido";
-    }
-    
-    // Verificar si el email ya existe para otro usuario
-    if ($email != $usuario['email']) {
-        $query_check_email = "SELECT * FROM usuario WHERE email = '$email' AND usuario_id != '$usuario_id'";
-        $result_check_email = mysqli_query($link, $query_check_email);
-        
-        if (mysqli_num_rows($result_check_email) > 0) {
-            $errores[] = "El email ya está en uso por otro usuario";
-        }
-    }
-    
-    // Si no hay errores, actualizar perfil
-    if (empty($errores)) {
-        $query_update = "UPDATE usuario SET 
-                        nombre = '$nombre', 
-                        apellido = '$apellido', 
-                        email = '$email', 
-                        telefono = '$telefono' 
-                        WHERE usuario_id = '$usuario_id'";
-        
-        if (mysqli_query($link, $query_update)) {
-            $success = "Perfil actualizado correctamente";
-            
-            // Actualizar información en sesión
-            $_SESSION['user_name'] = $nombre . ' ' . $apellido;
-            
-            // Recargar datos del usuario
-            $result_user = mysqli_query($link, $query_user);
-            $usuario = mysqli_fetch_assoc($result_user);
-        } else {
-            $errores[] = "Error al actualizar el perfil: " . mysqli_error($link);
-        }
-    }
-}
+// Procesar actualización de datos
+$error_message = '';
+$success_message = '';
 
-// Procesar el formulario de cambio de contraseña
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] == 'change_password') {
-    $password_actual = $_POST['password_actual'];
-    $password_nueva = $_POST['password_nueva'];
-    $password_confirmar = $_POST['password_confirmar'];
-    
-    // Validación de datos
-    $errores_password = [];
-    
-    if (empty($password_actual) || empty($password_nueva) || empty($password_confirmar)) {
-        $errores_password[] = "Todos los campos son obligatorios";
-    }
-    
-    // Verificar que la contraseña actual sea correcta
-    if (!password_verify($password_actual, $usuario['password'])) {
-        $errores_password[] = "La contraseña actual es incorrecta";
-    }
-    
-    // Verificar que las contraseñas coincidan
-    if ($password_nueva != $password_confirmar) {
-        $errores_password[] = "Las contraseñas no coinciden";
-    }
-    
-    // Verificar longitud mínima
-    if (strlen($password_nueva) < 6) {
-        $errores_password[] = "La contraseña debe tener al menos 6 caracteres";
-    }
-    
-    // Si no hay errores, actualizar contraseña
-    if (empty($errores_password)) {
-        $password_hash = password_hash($password_nueva, PASSWORD_DEFAULT);
-        
-        $query_update = "UPDATE usuario SET password = '$password_hash' WHERE usuario_id = '$usuario_id'";
-        
-        if (mysqli_query($link, $query_update)) {
-            $success_password = "Contraseña actualizada correctamente";
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Actualización de datos de perfil
+    if (isset($_POST['update_profile'])) {
+        $nombre = mysqli_real_escape_string($link, $_POST['nombre']);
+        $apellido = mysqli_real_escape_string($link, $_POST['apellido']);
+        $email = mysqli_real_escape_string($link, $_POST['email']);
+        $telefono = mysqli_real_escape_string($link, $_POST['telefono']);
+        $direccion = mysqli_real_escape_string($link, $_POST['direccion']);
+
+        // Validación básica
+        if (empty($nombre) || empty($apellido) || empty($email)) {
+            $error_message = 'Los campos nombre, apellido y email son obligatorios.';
         } else {
-            $errores_password[] = "Error al actualizar la contraseña: " . mysqli_error($link);
+            // Verificar si el email ya existe (si ha cambiado)
+            if ($email != $usuario['email']) {
+                $check_email = mysqli_query($link, "SELECT * FROM usuario WHERE email = '$email' AND usuario_id != '$usuario_id'");
+                if (mysqli_num_rows($check_email) > 0) {
+                    $error_message = 'El email ya está en uso por otro usuario.';
+                }
+            }
+
+            // Si no hay errores, actualizar
+            if (empty($error_message)) {
+                $query = "UPDATE usuario SET 
+                          nombre = '$nombre', 
+                          apellido = '$apellido', 
+                          email = '$email', 
+                          telefono = '$telefono', 
+                          direccion = '$direccion' 
+                          WHERE usuario_id = '$usuario_id'";
+                
+                if (mysqli_query($link, $query)) {
+                    $success_message = 'Tu perfil ha sido actualizado correctamente.';
+                    
+                    // Actualizar datos en sesión
+                    $_SESSION['user_name'] = $nombre . ' ' . $apellido;
+                    $_SESSION['user_email'] = $email;
+                    
+                    // Recargar información del usuario
+                    $result_user = mysqli_query($link, $query_user);
+                    $usuario = mysqli_fetch_assoc($result_user);
+                } else {
+                    $error_message = 'Error al actualizar el perfil: ' . mysqli_error($link);
+                }
+            }
+        }
+    }
+    
+    // Cambio de contraseña
+    if (isset($_POST['change_password'])) {
+        $current_password = $_POST['current_password'];
+        $new_password = $_POST['new_password'];
+        $confirm_password = $_POST['confirm_password'];
+        
+        // Validación básica
+        if (empty($current_password) || empty($new_password) || empty($confirm_password)) {
+            $error_message = 'Todos los campos de contraseña son obligatorios.';
+        } elseif ($new_password != $confirm_password) {
+            $error_message = 'Las nuevas contraseñas no coinciden.';
+        } elseif (strlen($new_password) < 6) {
+            $error_message = 'La nueva contraseña debe tener al menos 6 caracteres.';
+        } else {
+            // Comprobar si la contraseña actual es correcta
+            // En este ejemplo no usamos hash, la comparación es directa
+            if ($current_password != $usuario['contrasena_hash']) {
+                $error_message = 'La contraseña actual es incorrecta.';
+            } else {
+                // Actualizar la contraseña
+                $query = "UPDATE usuario SET contrasena_hash = '$new_password' WHERE usuario_id = '$usuario_id'";
+                
+                if (mysqli_query($link, $query)) {
+                    $success_message = 'Tu contraseña ha sido actualizada correctamente.';
+                } else {
+                    $error_message = 'Error al actualizar la contraseña: ' . mysqli_error($link);
+                }
+            }
         }
     }
 }
@@ -119,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <meta charset="UTF-8">
     <link rel="stylesheet" href="../css/styles.css">
     <style>
-        .profile-container {
+        .user-dashboard {
             display: grid;
             grid-template-columns: 1fr 3fr;
             gap: 30px;
@@ -130,33 +120,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             padding: 20px;
         }
-        .user-profile {
-            text-align: center;
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #eee;
-        }
-        .user-avatar {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            background-color: #3498db;
-            color: white;
-            font-size: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 15px;
-        }
-        .user-name {
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .user-email {
-            color: #7f8c8d;
-            font-size: 14px;
-            margin-bottom: 15px;
+        .user-content {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 20px;
         }
         .user-menu {
             list-style: none;
@@ -168,47 +136,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .user-menu a {
             display: block;
             padding: 10px;
-            border-radius: 5px;
             text-decoration: none;
             color: #333;
+            border-radius: 4px;
             transition: background-color 0.3s;
         }
         .user-menu a:hover, .user-menu a.active {
-            background-color: #f5f5f5;
+            background-color: #f0f7fb;
         }
-        .profile-content {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
+        .profile-form {
+            margin-bottom: 30px;
         }
-        .profile-section {
-            background-color: white;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            padding: 20px;
+        .form-section {
+            margin-bottom: 30px;
         }
-        .section-title {
-            font-size: 18px;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
+        .form-section h3 {
             border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
         }
-        .alert-error {
-            background-color: #f8d7da;
-            color: #721c24;
-            padding: 10px;
-            border-radius: 3px;
+        .form-row {
+            margin-bottom: 15px;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .form-buttons {
+            margin-top: 20px;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 4px;
             margin-bottom: 20px;
         }
         .alert-success {
             background-color: #d4edda;
             color: #155724;
-            padding: 10px;
-            border-radius: 3px;
-            margin-bottom: 20px;
         }
-        @media (max-width: 992px) {
-            .profile-container {
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        @media (max-width: 768px) {
+            .user-dashboard {
                 grid-template-columns: 1fr;
             }
         }
@@ -229,117 +207,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     </header>
 
     <main class="container">
-        <h1>Mi Perfil</h1>
-        
-        <div class="profile-container">
+        <h1>Mi Cuenta</h1>
+
+        <?php if (!empty($error_message)): ?>
+            <div class="alert alert-error">
+                <?php echo $error_message; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!empty($success_message)): ?>
+            <div class="alert alert-success">
+                <?php echo $success_message; ?>
+            </div>
+        <?php endif; ?>
+
+        <div class="user-dashboard">
             <div class="user-sidebar">
-                <div class="user-profile">
-                    <div class="user-avatar"><?php echo strtoupper(substr($usuario['nombre'], 0, 1)); ?></div>
-                    <div class="user-name"><?php echo $usuario['nombre'] . ' ' . $usuario['apellido']; ?></div>
-                    <div class="user-email"><?php echo $usuario['email']; ?></div>
-                </div>
-                
                 <ul class="user-menu">
                     <li><a href="index.php">Panel Principal</a></li>
                     <li><a href="ordenes.php">Mis Pedidos</a></li>
                     <li><a href="favoritos.php">Mis Favoritos</a></li>
-                    <li><a href="direcciones.php">Mis Direcciones</a></li>
                     <li><a href="perfil.php" class="active">Mi Perfil</a></li>
                     <li><a href="../logout.php">Cerrar Sesión</a></li>
                 </ul>
             </div>
-            
-            <div class="profile-content">
-                <div class="profile-section">
-                    <h2 class="section-title">Información Personal</h2>
-                    
-                    <?php if (isset($errores) && !empty($errores)): ?>
-                        <div class="alert-error">
-                            <ul>
-                                <?php foreach ($errores as $error): ?>
-                                    <li><?php echo $error; ?></li>
-                                <?php endforeach; ?>
-                            </ul>
+
+            <div class="user-content">
+                <h2>Mi Perfil</h2>
+
+                <div class="form-section">
+                    <h3>Datos Personales</h3>
+                    <form method="post" class="profile-form" action="">
+                        <div class="form-row">
+                            <label for="nombre" class="form-label">Nombre:</label>
+                            <input type="text" id="nombre" name="nombre" value="<?php echo $usuario['nombre']; ?>" required class="form-input">
                         </div>
-                    <?php endif; ?>
-                    
-                    <?php if (isset($success)): ?>
-                        <div class="alert-success">
-                            <?php echo $success; ?>
+
+                        <div class="form-row">
+                            <label for="apellido" class="form-label">Apellido:</label>
+                            <input type="text" id="apellido" name="apellido" value="<?php echo $usuario['apellido']; ?>" required class="form-input">
                         </div>
-                    <?php endif; ?>
-                    
-                    <form method="POST" action="">
-                        <input type="hidden" name="action" value="update_profile">
-                        
-                        <div class="form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <div class="form-group">
-                                <label for="nombre">Nombre:</label>
-                                <input type="text" id="nombre" name="nombre" value="<?php echo $usuario['nombre']; ?>" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="apellido">Apellido:</label>
-                                <input type="text" id="apellido" name="apellido" value="<?php echo $usuario['apellido']; ?>" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="email">Email:</label>
-                                <input type="email" id="email" name="email" value="<?php echo $usuario['email']; ?>" required>
-                            </div>
-                            
-                            <div class="form-group">
-                                <label for="telefono">Teléfono:</label>
-                                <input type="text" id="telefono" name="telefono" value="<?php echo $usuario['telefono']; ?>">
-                            </div>
+
+                        <div class="form-row">
+                            <label for="email" class="form-label">Email:</label>
+                            <input type="email" id="email" name="email" value="<?php echo $usuario['email']; ?>" required class="form-input">
                         </div>
-                        
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-success">Actualizar Información</button>
+
+                        <div class="form-row">
+                            <label for="telefono" class="form-label">Teléfono:</label>
+                            <input type="text" id="telefono" name="telefono" value="<?php echo $usuario['telefono']; ?>" class="form-input">
+                        </div>
+
+                        <div class="form-row">
+                            <label for="direccion" class="form-label">Dirección:</label>
+                            <textarea id="direccion" name="direccion" rows="3" class="form-input"><?php echo $usuario['direccion']; ?></textarea>
+                        </div>
+
+                        <div class="form-buttons">
+                            <button type="submit" name="update_profile" class="btn">Actualizar Perfil</button>
                         </div>
                     </form>
                 </div>
-                
-                <div class="profile-section">
-                    <h2 class="section-title">Cambiar Contraseña</h2>
-                    
-                    <?php if (isset($errores_password) && !empty($errores_password)): ?>
-                        <div class="alert-error">
-                            <ul>
-                                <?php foreach ($errores_password as $error): ?>
-                                    <li><?php echo $error; ?></li>
-                                <?php endforeach; ?>
-                            </ul>
+
+                <div class="form-section">
+                    <h3>Cambiar Contraseña</h3>
+                    <form method="post" class="profile-form" action="">
+                        <div class="form-row">
+                            <label for="current_password" class="form-label">Contraseña Actual:</label>
+                            <input type="password" id="current_password" name="current_password" class="form-input">
                         </div>
-                    <?php endif; ?>
-                    
-                    <?php if (isset($success_password)): ?>
-                        <div class="alert-success">
-                            <?php echo $success_password; ?>
+
+                        <div class="form-row">
+                            <label for="new_password" class="form-label">Nueva Contraseña:</label>
+                            <input type="password" id="new_password" name="new_password" class="form-input">
                         </div>
-                    <?php endif; ?>
-                    
-                    <form method="POST" action="">
-                        <input type="hidden" name="action" value="change_password">
-                        
-                        <div class="form-group">
-                            <label for="password_actual">Contraseña Actual:</label>
-                            <input type="password" id="password_actual" name="password_actual" required>
+
+                        <div class="form-row">
+                            <label for="confirm_password" class="form-label">Confirmar Nueva Contraseña:</label>
+                            <input type="password" id="confirm_password" name="confirm_password" class="form-input">
                         </div>
-                        
-                        <div class="form-group">
-                            <label for="password_nueva">Nueva Contraseña:</label>
-                            <input type="password" id="password_nueva" name="password_nueva" required>
-                            <small>La contraseña debe tener al menos 6 caracteres</small>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="password_confirmar">Confirmar Contraseña:</label>
-                            <input type="password" id="password_confirmar" name="password_confirmar" required>
-                        </div>
-                        
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-success">Cambiar Contraseña</button>
+
+                        <div class="form-buttons">
+                            <button type="submit" name="change_password" class="btn">Cambiar Contraseña</button>
                         </div>
                     </form>
                 </div>
