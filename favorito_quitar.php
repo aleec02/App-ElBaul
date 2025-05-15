@@ -21,11 +21,23 @@ $producto_id = mysqli_real_escape_string($link, $_GET['id']);
 $usuario_id = $_SESSION['user_id'];
 
 // Eliminar de favoritos
-$query = "DELETE FROM favorito WHERE usuario_id = '$usuario_id' AND producto_id = '$producto_id'";
-mysqli_query($link, $query);
+$query_delete = "DELETE FROM favorito WHERE usuario_id = '$usuario_id' AND producto_id = '$producto_id'";
 
-// Redirigir
-$referrer = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : "producto_detalle.php?id=$producto_id";
-header("Location: $referrer");
+if (mysqli_query($link, $query_delete)) {
+    // Éxito, redirigir de vuelta
+    $_SESSION['mensaje'] = "Producto eliminado de favoritos.";
+    $_SESSION['mensaje_tipo'] = "success";
+} else {
+    // Error, redirigir con mensaje de error
+    $_SESSION['mensaje'] = "Error al eliminar de favoritos: " . mysqli_error($link);
+    $_SESSION['mensaje_tipo'] = "error";
+}
+
+// Redirigir de vuelta a la página del producto o a la lista de favoritos
+if (isset($_GET['return']) && $_GET['return'] == 'favoritos') {
+    header("Location: user/favoritos.php");
+} else {
+    header("Location: producto_detalle.php?id=$producto_id");
+}
 exit();
 ?>
