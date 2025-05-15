@@ -70,19 +70,19 @@ if (!$producto_en_carrito) {
 // Si el usuario está logueado, guardar en base de datos
 if (isset($_SESSION['user_id'])) {
     $usuario_id = $_SESSION['user_id'];
-    
+
     // Verificar si ya existe el carrito en la BD
     $query_check = "SELECT * FROM carrito WHERE usuario_id = '$usuario_id'";
     $result_check = mysqli_query($link, $query_check);
-    
+
     if (mysqli_num_rows($result_check) > 0) {
         $carrito = mysqli_fetch_assoc($result_check);
         $carrito_id = $carrito['carrito_id'];
-        
+
         // Verificar si el producto ya está en el carrito en la BD
         $query_item = "SELECT * FROM item_carrito WHERE carrito_id = '$carrito_id' AND producto_id = '$producto_id'";
         $result_item = mysqli_query($link, $query_item);
-        
+
         if (mysqli_num_rows($result_item) > 0) {
             // Actualizar cantidad
             $item = mysqli_fetch_assoc($result_item);
@@ -90,30 +90,32 @@ if (isset($_SESSION['user_id'])) {
             if ($nueva_cantidad > $producto['stock']) {
                 $nueva_cantidad = $producto['stock'];
             }
-            
-            $query_update = "UPDATE item_carrito SET cantidad = $nueva_cantidad, fecha_actualizacion = NOW() 
+
+            $query_update = "UPDATE item_carrito SET cantidad = $nueva_cantidad 
                             WHERE carrito_id = '$carrito_id' AND producto_id = '$producto_id'";
             mysqli_query($link, $query_update);
         } else {
             // Agregar nuevo item
-            $query_insert = "INSERT INTO item_carrito (carrito_id, producto_id, cantidad, precio_unitario, fecha_agregado) 
-                            VALUES ('$carrito_id', '$producto_id', $cantidad, {$producto['precio']}, NOW())";
+            $item_carrito_id = 'IC' . sprintf('%06d', mt_rand(1, 999999));
+            $query_insert = "INSERT INTO item_carrito (item_carrito_id, carrito_id, producto_id, cantidad, fecha_agregado)
+                            VALUES ('$item_carrito_id', '$carrito_id', '$producto_id', $cantidad, NOW())";
             mysqli_query($link, $query_insert);
         }
-        
+
         // Actualizar fecha del carrito
         $query_update_carrito = "UPDATE carrito SET fecha_actualizacion = NOW() WHERE carrito_id = '$carrito_id'";
         mysqli_query($link, $query_update_carrito);
     } else {
         // Crear nuevo carrito
         $carrito_id = 'CA' . sprintf('%06d', mt_rand(1, 999999));
-        $query_carrito = "INSERT INTO carrito (carrito_id, usuario_id, fecha_creacion, fecha_actualizacion) 
+        $query_carrito = "INSERT INTO carrito (carrito_id, usuario_id, fecha_creacion, fecha_actualizacion)
                           VALUES ('$carrito_id', '$usuario_id', NOW(), NOW())";
         mysqli_query($link, $query_carrito);
-        
+
         // Agregar item
-        $query_insert = "INSERT INTO item_carrito (carrito_id, producto_id, cantidad, precio_unitario, fecha_agregado) 
-                        VALUES ('$carrito_id', '$producto_id', $cantidad, {$producto['precio']}, NOW())";
+        $item_carrito_id = 'IC' . sprintf('%06d', mt_rand(1, 999999));
+        $query_insert = "INSERT INTO item_carrito (item_carrito_id, carrito_id, producto_id, cantidad, fecha_agregado)
+                        VALUES ('$item_carrito_id', '$carrito_id', '$producto_id', $cantidad, NOW())";
         mysqli_query($link, $query_insert);
     }
 }

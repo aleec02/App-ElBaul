@@ -127,8 +127,14 @@ if (isset($_SESSION['user_id'])) {
         }
         .product-quantity {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
+            flex-direction: column;
             margin-bottom: 20px;
+        }
+        .quantity-controls {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
         }
         .product-quantity input {
             width: 50px;
@@ -266,143 +272,5 @@ if (isset($_SESSION['user_id'])) {
                         <input type="hidden" name="producto_id" value="<?php echo $producto_id; ?>">
                         
                         <div class="product-quantity">
-                            <label for="cantidad">Cantidad:</label>
-                            <button type="button" onclick="decrementQuantity()">-</button>
-                            <input type="number" id="cantidad" name="cantidad" value="1" min="1" max="<?php echo $producto['stock']; ?>">
-                            <button type="button" onclick="incrementQuantity(<?php echo $producto['stock']; ?>)">+</button>
-                        </div>
-                        
-                        <div class="product-actions">
-                            <button type="submit" class="btn btn-success">Agregar al Carrito</button>
-                            
-                            <?php if (isset($_SESSION['user_id'])): ?>
-                                <?php if ($en_favoritos): ?>
-                                    <a href="favorito_quitar.php?id=<?php echo $producto_id; ?>" class="btn">Quitar de Favoritos</a>
-                                <?php else: ?>
-                                    <a href="favorito_agregar.php?id=<?php echo $producto_id; ?>" class="btn">Agregar a Favoritos</a>
-                                <?php endif; ?>
-                            <?php else: ?>
-                                <a href="login.php" class="btn">Iniciar sesión para Favoritos</a>
-                            <?php endif; ?>
-                        </div>
-                    </form>
-                <?php else: ?>
-                    <p><strong>Producto agotado</strong></p>
-                <?php endif; ?>
-                
-                <div class="product-description">
-                    <h3>Descripción</h3>
-                    <p><?php echo nl2br($producto['descripcion']); ?></p>
-                </div>
-                
-                <div class="product-meta">
-                    <?php if (!empty($producto['marca'])): ?>
-                        <p><strong>Marca:</strong> <?php echo $producto['marca']; ?></p>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($producto['modelo'])): ?>
-                        <p><strong>Modelo:</strong> <?php echo $producto['modelo']; ?></p>
-                    <?php endif; ?>
-                    
-                    <?php if (!empty($producto['año_fabricacion'])): ?>
-                        <p><strong>Año de Fabricación:</strong> <?php echo $producto['año_fabricacion']; ?></p>
-                    <?php endif; ?>
-                    
-                    <p><strong>Fecha de Publicación:</strong> <?php echo date('d/m/Y', strtotime($producto['fecha_publicacion'])); ?></p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Reseñas -->
-        <div class="reviews-section">
-            <h2>Opiniones de Clientes</h2>
-            
-            <?php if (mysqli_num_rows($result_resenas) > 0): ?>
-                <?php while ($resena = mysqli_fetch_assoc($result_resenas)): ?>
-                    <div class="review-item">
-                        <div class="review-header">
-                            <span class="review-author"><?php echo $resena['nombre'] . ' ' . $resena['apellido']; ?></span>
-                            <span class="review-date"><?php echo date('d/m/Y', strtotime($resena['fecha'])); ?></span>
-                        </div>
-                        
-                        <div class="star-rating">
-                            <?php for ($i = 1; $i <= 5; $i++): ?>
-                                <?php if ($i <= $resena['puntuacion']): ?>
-                                    ★
-                                <?php else: ?>
-                                    ☆
-                                <?php endif; ?>
-                            <?php endfor; ?>
-                        </div>
-                        
-                        <p><?php echo nl2br($resena['comentario']); ?></p>
-                    </div>
-                <?php endwhile; ?>
-            <?php else: ?>
-                <p>Este producto aún no tiene opiniones.</p>
-            <?php endif; ?>
-            
-            <?php if (isset($_SESSION['user_id'])): ?>
-                <p><a href="resena_crear.php?id=<?php echo $producto_id; ?>" class="btn">Escribir una Opinión</a></p>
-            <?php else: ?>
-                <p><a href="login.php">Inicia sesión</a> para dejar una opinión.</p>
-            <?php endif; ?>
-        </div>
-        
-        <!-- Productos Relacionados -->
-        <?php if (mysqli_num_rows($result_relacionados) > 0): ?>
-            <div class="related-products">
-                <h2>Productos Relacionados</h2>
-                
-                <div class="related-grid">
-                    <?php while ($relacionado = mysqli_fetch_assoc($result_relacionados)): ?>
-                        <div class="related-item">
-                            <a href="producto_detalle.php?id=<?php echo $relacionado['producto_id']; ?>">
-                                <?php if (!empty($relacionado['imagen'])): ?>
-                                    <img src="<?php echo $relacionado['imagen']; ?>" alt="<?php echo $relacionado['titulo']; ?>">
-                                <?php else: ?>
-                                    <div style="height: 150px; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
-                                        <span>Sin imagen</span>
-                                    </div>
-                                <?php endif; ?>
-                                
-                                <h3><?php echo $relacionado['titulo']; ?></h3>
-                                <p class="related-price">S/. <?php echo number_format($relacionado['precio'], 2); ?></p>
-                                <span class="btn">Ver Producto</span>
-                            </a>
-                        </div>
-                    <?php endwhile; ?>
-                </div>
-            </div>
-        <?php endif; ?>
-    </main>
-
-    <footer>
-        <div class="container">
-            <p>&copy; <?php echo date('Y'); ?> ElBaúl - Todos los derechos reservados</p>
-        </div>
-    </footer>
-    
-    <script>
-        function changeImage(src) {
-            document.getElementById('mainImage').src = src;
-        }
-        
-        function decrementQuantity() {
-            var input = document.getElementById('cantidad');
-            var value = parseInt(input.value);
-            if (value > 1) {
-                input.value = value - 1;
-            }
-        }
-        
-        function incrementQuantity(max) {
-            var input = document.getElementById('cantidad');
-            var value = parseInt(input.value);
-            if (value < max) {
-                input.value = value + 1;
-            }
-        }
-    </script>
-</body>
-</html>
+                            <div class="quantity-controls">
+                                <label for="cantidad">Cantidad:</label>

@@ -34,10 +34,7 @@ $result_count_favoritos = mysqli_query($link, $query_count_favoritos);
 $total_favoritos = mysqli_fetch_assoc($result_count_favoritos)['total'];
 
 // Contar direcciones
-$query_count_direcciones = "SELECT COUNT(*) as total FROM direccion WHERE usuario_id = '$usuario_id'";
-$result_count_direcciones = mysqli_query($link, $query_count_direcciones);
-$total_direcciones = mysqli_fetch_assoc($result_count_direcciones)['total'];
-
+$total_direcciones = 0;
 // Obtener último acceso (simulado para esta implementación)
 $ultimo_acceso = date('Y-m-d H:i:s', time() - rand(3600, 86400));
 ?>
