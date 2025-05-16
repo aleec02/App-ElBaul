@@ -1,17 +1,12 @@
 <?php
-// Iniciar sesión
 session_start();
-
-// Incluir archivos necesarios
 require_once 'includes/db_connection.php';
 
-// Verificar que el usuario esté logueado
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php?redirect=checkout.php");
     exit();
 }
 
-// Verificar que el carrito tenga productos
 if (!isset($_SESSION['carrito']) || count($_SESSION['carrito']) == 0) {
     header("Location: carrito.php");
     exit();
@@ -19,16 +14,13 @@ if (!isset($_SESSION['carrito']) || count($_SESSION['carrito']) == 0) {
 
 $usuario_id = $_SESSION['user_id'];
 
-// Obtener información del usuario
 $query_user = "SELECT * FROM usuario WHERE usuario_id = '$usuario_id'";
 $result_user = mysqli_query($link, $query_user);
 $usuario = mysqli_fetch_assoc($result_user);
 
-// Obtener direcciones del usuario
 $direcciones_existentes = false;
 $result_direcciones = false;
 
-// Verificar si existe la tabla direccion en la base de datos
 $check_table = mysqli_query($link, "SHOW TABLES LIKE 'direccion'");
 if (mysqli_num_rows($check_table) > 0) {
     $query_direcciones = "SELECT * FROM direccion WHERE usuario_id = '$usuario_id' ORDER BY es_principal DESC, fecha_creacion DESC";
@@ -36,7 +28,6 @@ if (mysqli_num_rows($check_table) > 0) {
     $direcciones_existentes = mysqli_num_rows($result_direcciones) > 0;
 }
 
-// Calcular totales
 $subtotal = 0;
 $iva = 0;
 $total = 0;
@@ -45,11 +36,10 @@ foreach ($_SESSION['carrito'] as $item) {
     $subtotal += $item['precio'] * $item['cantidad'];
 }
 
-// Aplicar IVA (18% en Perú)
+// aplicar IVA
 $iva = $subtotal * 0.18;
 $total = $subtotal + $iva;
 
-// Procesar el envío del formulario
 $errores = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nombre = mysqli_real_escape_string($link, $_POST['nombre']);
@@ -60,7 +50,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $metodo_pago = mysqli_real_escape_string($link, $_POST['metodo_pago']);
     $notas = isset($_POST['notas']) ? mysqli_real_escape_string($link, $_POST['notas']) : '';
 
-    // Validación de datos
     $errores = [];
 
     if (empty($nombre) || empty($apellido) || empty($email) || empty($telefono)) {
@@ -497,64 +486,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </form>
             </div>
 
-            <div class="checkout-summary">
-                <h2>Resumen del Pedido</h2>
+            <main>
+		<div class="checkout-summary">
+			<h2>Resumen del Pedido</h2>
 
-                <div class="cart-items">
-                    <?php foreach ($_SESSION['carrito'] as $item): ?>
-                        <div class="cart-item">
-                            <?php if (isset($item['imagen']) && !empty($item['imagen'])): ?>
-                                <img src="<?php echo $item['imagen']; ?>" alt="<?php echo $item['titulo']; ?>" class="cart-item-image">
-                            <?php else: ?>
-                                <div class="cart-item-image" style="display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
-                                    <span>Sin imagen</span>
-                                </div>
-                            <?php endif; ?>
+			<div class="cart-items">
+				<?php foreach ($_SESSION['carrito'] as $item): ?>
+					<div class="cart-item">
+						<?php if (isset($item['imagen']) && !empty($item['imagen'])): ?>
+							<img src="<?php echo $item['imagen']; ?>" alt="<?php echo $item['titulo']; ?>" class="cart-item-image">
+						<?php else: ?>
+							<div class="cart-item-image" style="display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
+								<span>Sin imagen</span>
+							</div>
+						<?php endif; ?>
 
-                            <div class="cart-item-details">
-                                <div class="cart-item-title"><?php echo $item['titulo']; ?></div>
-                                <div class="cart-item-price">
-                                    S/. <?php echo number_format($item['precio'], 2); ?> x <?php echo $item['cantidad']; ?>
-                                </div>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-		<!-- Cupón de descuento -->
-		<div class="form-section">
-    		<h3>Cupón de Descuento</h3>
-    		<div style="display: flex; gap: 10px; margin-bottom: 15px;">
-        		<input type="text" id="codigo_cupon" placeholder="Ingresa tu código" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-       			<button type="button" id="aplicar_cupon" class="btn">Aplicar</button>
+						<div class="cart-item-details">
+							<div class="cart-item-title"><?php echo $item['titulo']; ?></div>
+							<div class="cart-item-price">
+								S/. <?php echo number_format($item['precio'], 2); ?> x <?php echo $item['cantidad']; ?>
+							</div>
+						</div>
+					</div>
+				<?php endforeach; ?>
+			</div>
+
+			<!-- Cupón de descuento -->
+			<div class="form-section">
+				<h3>Cupón de Descuento</h3>
+				<div style="display: flex; gap: 10px; margin-bottom: 15px;">
+					<input type="text" id="codigo_cupon" placeholder="Ingresa tu código" style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+					<button type="button" id="aplicar_cupon" class="btn">Aplicar</button>
+				</div>
+				<div id="cupon_mensaje" style="margin-top: 10px; display: none;"></div>
+			</div>
+
+			<div class="cart-summary">
+				<div class="summary-row">
+					<span>Subtotal:</span>
+					<span>S/. <?php echo number_format($subtotal, 2); ?></span>
+				</div>
+
+				<div class="summary-row" id="fila_descuento" style="display: none;">
+					<span>Descuento:</span>
+					<span id="descuento_valor">S/. 0.00</span>
+				</div>
+
+				<div class="summary-row">
+					<span>IGV (18%):</span>
+					<span>S/. <?php echo number_format($iva, 2); ?></span>
+				</div>
+
+				<div class="summary-row">
+					<span>Envío:</span>
+					<span>Gratis</span>
+				</div>
+
+				<div class="summary-row summary-total">
+					<span>Total:</span>
+					<span id="total_valor">S/. <?php echo number_format($total, 2); ?></span>
+				</div>
+			</div>
 		</div>
-		<div id="cupon_mensaje" style="margin-top: 10px; display: none;"></div>
-		</div>
+	</main>
 
-                <div class="cart-summary">
-                    <div class="summary-row">
-                        <span>Subtotal:</span>
-                        <span>S/. <?php echo number_format($subtotal, 2); ?></span>
-                    </div>
 
-                    <div class="summary-row">
-                        <span>IGV (18%):</span>
-                        <span>S/. <?php echo number_format($iva, 2); ?></span>
-                    </div>
-
-                    <div class="summary-row">
-                        <span>Envío:</span>
-                        <span>Gratis</span>
-                    </div>
-
-                    <div class="summary-row summary-total">
-                        <span>Total:</span>
-                        <span>S/. <?php echo number_format($total, 2); ?></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
-
+    
     <footer>
         <div class="container">
             <p>&copy; <?php echo date('Y'); ?> ElBaúl - Todos los derechos reservados</p>
@@ -592,6 +589,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 selectedPayment.closest('.payment-method').classList.add('selected');
             }
         });
+
+    // Funcionalidad para cupones
+    document.getElementById('aplicar_cupon').addEventListener('click', function() {
+        const codigo = document.getElementById('codigo_cupon').value.trim();
+        
+        if (codigo === '') {
+            mostrarMensajeCupon('Por favor ingresa un código de cupón', 'error');
+            return;
+        }
+        
+        // Obtener subtotal actual
+        const subtotal = <?php echo $subtotal; ?>;
+        
+        // Enviar petición AJAX
+        fetch('cupon_descuento.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'codigo=' + encodeURIComponent(codigo) + '&subtotal=' + subtotal
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Actualizar UI con el descuento
+                document.getElementById('descuento_valor').textContent = 'S/. ' + data.descuento.toFixed(2);
+                document.getElementById('total_valor').textContent = 'S/. ' + (data.nuevo_subtotal + <?php echo $iva; ?>).toFixed(2);
+                document.getElementById('fila_descuento').style.display = 'flex';
+                
+                // Mostrar mensaje
+                let mensaje = 'Cupón aplicado: ';
+                if (data.tipo_descuento === 'porcentaje') {
+                    mensaje += data.valor_descuento + '% de descuento';
+                } else {
+                    mensaje += 'S/. ' + data.valor_descuento.toFixed(2) + ' de descuento';
+                }
+                mostrarMensajeCupon(mensaje, 'success');
+                
+                // Añadir campo hidden con el cupón
+                if (!document.getElementById('cupon_id')) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.id = 'cupon_id';
+                    input.name = 'cupon_id';
+                    input.value = data.cupon_id;
+                    document.querySelector('form').appendChild(input);
+                }
+            } else {
+                mostrarMensajeCupon(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            mostrarMensajeCupon('Error al procesar el cupón', 'error');
+        });
+    });
+    
+    function mostrarMensajeCupon(mensaje, tipo) {
+        const div = document.getElementById('cupon_mensaje');
+        div.textContent = mensaje;
+        div.style.display = 'block';
+        
+        if (tipo === 'error') {
+            div.style.color = '#e74c3c';
+        } else {
+            div.style.color = '#2ecc71';
+        }
+    }
+
     </script>
 </body>
 </html>
