@@ -1,17 +1,13 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once '../includes/db_connection.php';
 
-// Verificar que el usuario esté logueado
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
 
-// Verificar que se recibió un ID de orden
 if (!isset($_GET['id']) || empty($_GET['id'])) {
     header("Location: ordenes.php");
     exit();
@@ -20,7 +16,6 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 $orden_id = mysqli_real_escape_string($link, $_GET['id']);
 $usuario_id = $_SESSION['user_id'];
 
-// Verificar que la orden existe y pertenece al usuario
 $query_orden = "SELECT * FROM orden WHERE orden_id = '$orden_id' AND usuario_id = '$usuario_id'";
 $result_orden = mysqli_query($link, $query_orden);
 
@@ -39,7 +34,6 @@ $query_items = "SELECT io.*, p.titulo,
                WHERE io.orden_id = '$orden_id'";
 $result_items = mysqli_query($link, $query_items);
 
-// Obtener información del usuario
 $query_user = "SELECT * FROM usuario WHERE usuario_id = '$usuario_id'";
 $result_user = mysqli_query($link, $query_user);
 $usuario = mysqli_fetch_assoc($result_user);
@@ -336,9 +330,45 @@ $usuario = mysqli_fetch_assoc($result_user);
                                 <div class="orden-item-precio">S/. <?php echo number_format($item['precio_unitario'], 2); ?> x <?php echo $item['cantidad']; ?></div>
                             </div>
 
+
                             <div class="orden-item-subtotal">
                                 S/. <?php echo number_format($subtotal, 2); ?>
                             </div>
+
+                            <div class="item-acciones">
+                                <?php if ($orden['estado'] === 'entregada' || $orden['estado'] === 'enviada'): ?>
+                                    <?php
+                                    // verificar si ya existe una solicitud de devolución para este producto
+                                    $query_devolucion = "SELECT * FROM devolucion WHERE orden_id = '$orden_id' AND producto_id = '{$item['producto_id']}' AND usuario_id = '$usuario_id'";
+                                    $result_devolucion = mysqli_query($link, $query_devolucion);
+                                    $tiene_devolucion = mysqli_num_rows($result_devolucion) > 0;
+                                    $devolucion = $tiene_devolucion ? mysqli_fetch_assoc($result_devolucion) : null;
+                                    ?>
+
+                                    <?php if ($tiene_devolucion): ?>
+                                        <div>
+                                            <span class="estado-badge estado-<?php echo $devolucion['estado']; ?>">
+                                                Devolución: <?php echo ucfirst($devolucion['estado']); ?>
+                                            </span>
+                                            <?php if ($devolucion['estado'] === 'solicitada'): ?>
+                                                <a href="devolucion_solicitar.php?orden_id=<?php echo $orden_id; ?>&producto_id=<?php echo $item['producto_id']; ?>" class="btn">Modificar Solicitud</a>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <a href="devolucion_solicitar.php?orden_id=<?php echo $orden_id; ?>&producto_id=<?php echo $item['producto_id']; ?>" class="btn">Solicitar Devolución</a>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+
+
+
+
+
+
+
+
+
+
                         </div>
                     <?php endwhile; ?>
 
