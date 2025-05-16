@@ -1,20 +1,16 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once 'includes/db_connection.php';
 
-// Verificar si existe carrito en sesión
 if (!isset($_SESSION['carrito'])) {
     $_SESSION['carrito'] = [];
 }
 
-// Si el usuario está logueado, sincronizar carrito con BD
+// si el usuario está logueado, sincronizar carrito con BD
 if (isset($_SESSION['user_id'])) {
     $usuario_id = $_SESSION['user_id'];
     
-    // Verificar si existe carrito en BD
     $query_carrito = "SELECT * FROM carrito WHERE usuario_id = '$usuario_id'";
     $result_carrito = mysqli_query($link, $query_carrito);
     
@@ -22,7 +18,7 @@ if (isset($_SESSION['user_id'])) {
         $carrito = mysqli_fetch_assoc($result_carrito);
         $carrito_id = $carrito['carrito_id'];
         
-        // Obtener items del carrito
+        // obtener items del carrito
         $query_items = "SELECT ic.*, p.titulo, p.precio, p.stock, 
                         (SELECT url_imagen FROM imagen_producto WHERE producto_id = ic.producto_id AND es_principal = 1 LIMIT 1) as imagen
                         FROM item_carrito ic
@@ -30,12 +26,10 @@ if (isset($_SESSION['user_id'])) {
                         WHERE ic.carrito_id = '$carrito_id'";
         $result_items = mysqli_query($link, $query_items);
         
-        // Reemplazar carrito en sesión con datos de BD
+        // reemplazar carrito en sesión con datos de BD
         $_SESSION['carrito'] = [];
-        while ($item = mysqli_fetch_assoc($result_items)) {
-            // Verificar stock actual
-            if ($item['stock'] > 0) {
-                // Limitar cantidad al stock disponible
+        while ($item = mysqli_fetch_assoc($result_items)) { // verificar stock actual
+            if ($item['stock'] > 0) {// limitar cantidad al stock disponible
                 $cantidad = ($item['cantidad'] > $item['stock']) ? $item['stock'] : $item['cantidad'];
                 
                 $_SESSION['carrito'][] = [
@@ -51,28 +45,25 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
-// Calcular total
 $total = 0;
 
 
-// Actualizar información de imágenes si no están presentes
+// actualizar info de imgs si no están presentes
 foreach ($_SESSION['carrito'] as $key => $item) {
     if (!isset($item['imagen']) || !isset($item['precio']) || $item['precio'] == 0) {
         $producto_id = $item['producto_id'];
         
-        // Obtener precio e imagen
+        // obtener precio e imagen
         $query_producto = "SELECT precio FROM producto WHERE producto_id = '$producto_id'";
         $result_producto = mysqli_query($link, $query_producto);
         
         if (mysqli_num_rows($result_producto) > 0) {
             $producto = mysqli_fetch_assoc($result_producto);
-            // Actualizar precio si es cero
             if (!isset($item['precio']) || $item['precio'] == 0) {
                 $_SESSION['carrito'][$key]['precio'] = $producto['precio'];
             }
         }
         
-        // Obtener imagen
         $query_imagen = "SELECT url_imagen FROM imagen_producto WHERE producto_id = '$producto_id' AND es_principal = 1 LIMIT 1";
         $result_imagen = mysqli_query($link, $query_imagen);
 

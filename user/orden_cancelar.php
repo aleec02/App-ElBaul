@@ -1,8 +1,5 @@
 <?php
-// Iniciar sesión
 session_start();
-
-// Incluir archivos necesarios
 require_once '../includes/db_connection.php';
 
 // Verificar que el usuario esté logueado

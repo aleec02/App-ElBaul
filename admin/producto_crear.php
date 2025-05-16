@@ -1,22 +1,19 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once '../includes/db_connection.php';
 
-// Verificar que sea administrador
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] != 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-// Función para generar UUID
+// fnpara generar UUID
 function generateUUID() {
     return sprintf('PR%06d', mt_rand(1, 999999));
 }
 
-// Función para generar ID de imagen
+// fnpara generar ID de imagen
 function generateImageID() {
     return sprintf('IM%06d', mt_rand(1, 999999));
 }

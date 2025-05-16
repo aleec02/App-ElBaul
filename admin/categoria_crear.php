@@ -1,17 +1,14 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once '../includes/db_connection.php';
 
-// Verificar que sea administrador
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] != 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-// Función para generar UUID
+// fn para generar UUID
 function generateUUID() {
     return sprintf('CA%06d', mt_rand(1, 999999));
 }

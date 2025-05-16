@@ -1,11 +1,8 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once 'includes/db_connection.php';
 
-// Verificar que se recibió un ID de orden
 if (!isset($_GET['id']) || empty($_GET['id'])) {
     header("Location: index.php");
     exit();
@@ -13,7 +10,6 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 
 $orden_id = mysqli_real_escape_string($link, $_GET['id']);
 
-// Verificar que el usuario esté logueado
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php?redirect=orden_confirmacion.php?id=$orden_id");
     exit();
@@ -21,11 +17,10 @@ if (!isset($_SESSION['user_id'])) {
 
 $usuario_id = $_SESSION['user_id'];
 
-// Obtener datos de la orden
 $query_orden = "SELECT * FROM orden WHERE orden_id = '$orden_id' AND usuario_id = '$usuario_id'";
 $result_orden = mysqli_query($link, $query_orden);
 
-// Si no existe la orden o no pertenece al usuario, redirigir
+// si no existe la orden o no pertenece al usuario, redirigir
 if (mysqli_num_rows($result_orden) == 0) {
     header("Location: index.php");
     exit();
@@ -33,7 +28,7 @@ if (mysqli_num_rows($result_orden) == 0) {
 
 $orden = mysqli_fetch_assoc($result_orden);
 
-// Obtener items de la orden
+// obtener items de la orden
 $query_items = "SELECT io.*, p.titulo, p.precio,
                (SELECT url_imagen FROM imagen_producto WHERE producto_id = io.producto_id AND es_principal = 1 LIMIT 1) as imagen
                FROM item_orden io
@@ -41,7 +36,7 @@ $query_items = "SELECT io.*, p.titulo, p.precio,
                WHERE io.orden_id = '$orden_id'";
 $result_items = mysqli_query($link, $query_items);
 
-// Obtener usuario
+// obtener usuario
 $query_user = "SELECT * FROM usuario WHERE usuario_id = '$usuario_id'";
 $result_user = mysqli_query($link, $query_user);
 $usuario = mysqli_fetch_assoc($result_user);

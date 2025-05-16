@@ -1,17 +1,13 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once '../includes/db_connection.php';
 
-// Verificar que el usuario esté logueado
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
 
-// Verificar que se recibió un ID de orden y un ID de producto
 if (!isset($_GET['orden_id']) || empty($_GET['orden_id']) || !isset($_GET['producto_id']) || empty($_GET['producto_id'])) {
     header("Location: ordenes.php");
     exit();

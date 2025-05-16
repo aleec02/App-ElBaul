@@ -1,24 +1,13 @@
 <?php
-// Iniciar sesión
 session_start();
 
-// Incluir archivos necesarios
 require_once '../includes/db_connection.php';
 
-// Verificar que sea administrador
-if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] != 'admin') {
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_role']) || $_SESSION['user_role'] != 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-// Comprobar si se ha enviado un mensaje
-$mensaje = '';
-if (isset($_SESSION['mensaje'])) {
-    $mensaje = $_SESSION['mensaje'];
-    unset($_SESSION['mensaje']);
-}
-
-// Verificar que se recibió un ID de orden
 if (!isset($_GET['id']) || empty($_GET['id'])) {
     header("Location: ordenes.php");
     exit();
@@ -26,13 +15,10 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 
 $orden_id = mysqli_real_escape_string($link, $_GET['id']);
 
-// Obtener información de la orden
-$query_orden = "SELECT o.*, u.nombre, u.apellido, u.email, u.telefono, 
-                d.calle, d.ciudad, d.provincia, d.codigo_postal, d.referencia 
-                FROM orden o 
-                JOIN usuario u ON o.usuario_id = u.usuario_id 
-                JOIN direccion d ON o.direccion_id = d.direccion_id 
-                WHERE o.orden_id = '$orden_id'";
+$query_orden = "SELECT o.*, u.nombre, u.apellido, u.email, u.telefono 
+               FROM orden o
+               JOIN usuario u ON o.usuario_id = u.usuario_id
+               WHERE o.orden_id = '$orden_id'";
 $result_orden = mysqli_query($link, $query_orden);
 
 if (mysqli_num_rows($result_orden) == 0) {
@@ -42,83 +28,32 @@ if (mysqli_num_rows($result_orden) == 0) {
 
 $orden = mysqli_fetch_assoc($result_orden);
 
-// Obtener items de la orden
-$query_items = "SELECT io.*, p.titulo, p.producto_id,
-               (SELECT url_imagen FROM imagen_producto WHERE producto_id = io.producto_id AND es_principal = 1 LIMIT 1) as imagen 
-               FROM item_orden io 
-               JOIN producto p ON io.producto_id = p.producto_id 
+// obtener items de la orden
+$query_items = "SELECT io.*, p.titulo, p.precio,
+               (SELECT url_imagen FROM imagen_producto WHERE producto_id = io.producto_id AND es_principal = 1 LIMIT 1) as imagen
+               FROM item_orden io
+               JOIN producto p ON io.producto_id = p.producto_id
                WHERE io.orden_id = '$orden_id'";
 $result_items = mysqli_query($link, $query_items);
 
-// Obtener historial de la orden
-$query_historial = "SELECT h.*, u.nombre, u.apellido
-                    FROM historial_orden h
-                    LEFT JOIN usuario u ON h.usuario_id = u.usuario_id
-                    WHERE h.orden_id = '$orden_id' 
-                    ORDER BY h.fecha_cambio DESC";
-$result_historial = mysqli_query($link, $query_historial);
-
-// Procesar actualización de estado
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] == 'update_status') {
+// procesar cambio de estado
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['actualizar_estado'])) {
     $nuevo_estado = mysqli_real_escape_string($link, $_POST['estado']);
-    $comentario = mysqli_real_escape_string($link, $_POST['comentario']);
-    $admin_id = $_SESSION['user_id'];
     
-    // Validar estado
-    $estados_validos = ['pendiente', 'procesando', 'enviado', 'entregado', 'cancelado'];
-    if (!in_array($nuevo_estado, $estados_validos)) {
-        $_SESSION['mensaje'] = "Estado no válido";
-        header("Location: orden_detalle.php?id=$orden_id");
-        exit();
-    }
-    
-    // Iniciar transacción
-    mysqli_begin_transaction($link);
-    
-    try {
-        // Si se cancela la orden, restaurar stock
-        if ($nuevo_estado == 'cancelado' && $orden['estado'] != 'cancelado') {
-            // Obtener items de la orden para restaurar stock
-            $result_items2 = mysqli_query($link, $query_items) or throw new Exception("Error al obtener items: " . mysqli_error($link));
-            
-            while ($item = mysqli_fetch_assoc($result_items2)) {
-                $producto_id = $item['producto_id'];
-                $cantidad = $item['cantidad'];
-                
-                // Actualizar stock del producto
-                $query_stock = "UPDATE producto SET stock = stock + $cantidad WHERE producto_id = '$producto_id'";
-                mysqli_query($link, $query_stock) or throw new Exception("Error al restaurar stock: " . mysqli_error($link));
-                
-                // Actualizar inventario
-                $query_inventario = "UPDATE inventario SET cantidad_disponible = cantidad_disponible + $cantidad, 
-                                   fecha_actualizacion = NOW() WHERE producto_id = '$producto_id'";
-                mysqli_query($link, $query_inventario) or throw new Exception("Error al actualizar inventario: " . mysqli_error($link));
-            }
-        }
-        
-        // Actualizar estado de la orden
+    $estados_validos = ['pendiente', 'pagada', 'enviada', 'entregada', 'cancelada'];
+    if (in_array($nuevo_estado, $estados_validos)) {
         $query_update = "UPDATE orden SET estado = '$nuevo_estado' WHERE orden_id = '$orden_id'";
-        mysqli_query($link, $query_update) or throw new Exception("Error al actualizar orden: " . mysqli_error($link));
         
-        // Registrar en el historial
-        $query_historial = "INSERT INTO historial_orden (orden_id, estado, comentario, usuario_id, fecha_cambio) 
-                          VALUES ('$orden_id', '$nuevo_estado', '$comentario', '$admin_id', NOW())";
-        mysqli_query($link, $query_historial) or throw new Exception("Error al registrar historial: " . mysqli_error($link));
-        
-        // Confirmar transacción
-        mysqli_commit($link);
-        
-        $_SESSION['mensaje'] = "Estado de la orden actualizado correctamente";
-        header("Location: orden_detalle.php?id=$orden_id");
-        exit();
-        
-    } catch (Exception $e) {
-        // Revertir transacción en caso de error
-        mysqli_rollback($link);
-        
-        $_SESSION['mensaje'] = "Error al actualizar orden: " . $e->getMessage();
-        header("Location: orden_detalle.php?id=$orden_id");
-        exit();
+        if (mysqli_query($link, $query_update)) {
+            $result_orden = mysqli_query($link, $query_orden);
+            $orden = mysqli_fetch_assoc($result_orden);
+            
+            $success_message = "Estado de la orden actualizado correctamente.";
+        } else {
+            $error_message = "Error al actualizar el estado: " . mysqli_error($link);
+        }
+    } else {
+        $error_message = "Estado no válido.";
     }
 }
 ?>
@@ -129,182 +64,194 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <meta charset="UTF-8">
     <link rel="stylesheet" href="../css/styles.css">
     <style>
-        .order-detail-container {
+        .admin-container {
+            display: grid;
+            grid-template-columns: 1fr 4fr;
+            gap: 20px;
+        }
+        .admin-sidebar {
+            background-color: #2c3e50;
+            color: white;
+            border-radius: 5px;
+            padding: 20px;
+        }
+        .admin-content {
             background-color: white;
             border-radius: 5px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             padding: 20px;
-            margin-bottom: 30px;
         }
-        .order-header {
+        .admin-menu {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .admin-menu li {
+            margin-bottom: 10px;
+        }
+        .admin-menu a {
+            display: block;
+            padding: 10px;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .admin-menu a:hover, .admin-menu a.active {
+            background-color: #34495e;
+        }
+        .orden-header {
             display: flex;
             justify-content: space-between;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 15px;
+            align-items: center;
             margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
         }
-        .order-id {
-            font-size: 20px;
-            font-weight: bold;
-            color: #2c3e50;
-        }
-        .order-status {
-            padding: 5px 15px;
-border-radius: 20px;
-            font-size: 14px;
+        .orden-estado {
             display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
         }
-        .status-pendiente {
+        .estado-pendiente {
             background-color: #f39c12;
-            color: white;
         }
-        .status-procesando {
+        .estado-pagada {
             background-color: #3498db;
-            color: white;
         }
-        .status-enviado {
+        .estado-enviada {
             background-color: #2ecc71;
-            color: white;
         }
-        .status-entregado {
+        .estado-entregada {
             background-color: #27ae60;
-            color: white;
         }
-        .status-cancelado {
+        .estado-cancelada {
             background-color: #e74c3c;
-            color: white;
         }
-        .detail-grid {
+        .detalles-orden {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
-        .detail-box {
+        .detalle-seccion {
             padding: 15px;
             background-color: #f9f9f9;
             border-radius: 5px;
         }
-        .detail-box h3 {
-            font-size: 16px;
-            margin-bottom: 10px;
-            color: #2c3e50;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #eee;
-        }
-        .order-items {
-            margin-top: 30px;
-        }
-        .section-title {
-            font-size: 18px;
-            margin-bottom: 15px;
+        .detalle-seccion h3 {
+            margin-top: 0;
             padding-bottom: 10px;
             border-bottom: 1px solid #eee;
+            margin-bottom: 15px;
         }
-        .order-item {
-            display: grid;
-            grid-template-columns: 80px 1fr auto;
-            gap: 15px;
-            padding: 15px 0;
-            border-bottom: 1px solid #eee;
+        .orden-items {
+            margin-top: 30px;
+        }
+        .orden-item {
+            display: flex;
             align-items: center;
+            border-bottom: 1px solid #eee;
+            padding: 15px 0;
         }
-        .order-item:last-child {
-            border-bottom: none;
-        }
-        .item-image img {
-            width: 100%;
+        .orden-item-imagen {
+            width: 80px;
             height: 80px;
             object-fit: contain;
+            margin-right: 15px;
             border: 1px solid #eee;
         }
-        .item-details h3 {
-            margin: 0 0 5px 0;
-            font-size: 16px;
-            border-bottom: none;
+        .orden-item-detalles {
+            flex-grow: 1;
         }
-        .item-price {
+        .orden-item-nombre {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .orden-item-precio {
+            color: #7f8c8d;
+        }
+        .orden-item-subtotal {
+            text-align: right;
+            min-width: 120px;
+            font-weight: bold;
+        }
+        .orden-resumen {
+            margin-top: 20px;
             text-align: right;
         }
-        .order-summary {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-        }
-        .summary-row {
-            display: flex;
-            justify-content: space-between;
+        .resumen-fila {
             margin-bottom: 10px;
         }
-        .summary-total {
-            font-weight: bold;
+        .total-fila {
             font-size: 18px;
+            font-weight: bold;
             margin-top: 10px;
             padding-top: 10px;
             border-top: 1px solid #eee;
         }
-        .order-timeline {
-            margin-top: 30px;
+        .cambiar-estado-form {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
         }
-        .timeline-item {
-            display: flex;
+        .form-group {
             margin-bottom: 15px;
-            position: relative;
-            padding-left: 30px;
         }
-        .timeline-date {
-            min-width: 150px;
-            color: #7f8c8d;
+        .form-label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
         }
-        .timeline-content {
-            flex-grow: 1;
+        .form-select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-width: 200px;
         }
-        .timeline-bullet {
-            position: absolute;
-            left: 0;
-            top: 5px;
-            width: 12px;
-            height: 12px;
-            background-color: #3498db;
-            border-radius: 50%;
-        }
-        .timeline-bullet::before {
-            content: '';
-            position: absolute;
-            left: 5px;
-            top: 12px;
-            width: 2px;
-            height: calc(100% + 15px);
-            background-color: #ddd;
-        }
-        .timeline-item:last-child .timeline-bullet::before {
-            display: none;
-        }
-        .update-status {
-            background-color: #f9f9f9;
-            padding: 20px;
-            border-radius: 5px;
+        .botones-accion {
+            display: flex;
+            justify-content: space-between;
             margin-top: 30px;
         }
-        .message {
+        .alert {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .alert-success {
             background-color: #d4edda;
             color: #155724;
-            padding: 10px;
-            margin-bottom: 20px;
-            border-radius: 5px;
         }
-        .actions {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            margin-top: 20px;
+        .alert-error {
+            background-color: #f8d7da;
+            color: #721c24;
         }
-        @media (max-width: 768px) {
-            .detail-grid {
-                grid-template-columns: 1fr;
+        .imprimir-btn {
+            margin-left: 10px;
+            padding: 5px 15px;
+            background-color: #34495e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .imprimir-btn:hover {
+            background-color: #2c3e50;
+        }
+        @media print {
+            .admin-sidebar, header, footer, .cambiar-estado-form, .botones-accion {
+                display: none !important;
             }
-            .order-item {
-                grid-template-columns: 60px 1fr auto;
+            .admin-container {
+                display: block;
+            }
+            .admin-content {
+                box-shadow: none;
+                padding: 0;
             }
         }
     </style>
@@ -315,8 +262,8 @@ border-radius: 20px;
             <h1><a href="../index.php">ElBaúl</a></h1>
             <nav>
                 <ul>
+                    <li><a href="../index.php">Inicio</a></li>
                     <li><a href="index.php">Panel Admin</a></li>
-                    <li><a href="../index.php">Ver Tienda</a></li>
                     <li><a href="../logout.php">Cerrar Sesión</a></li>
                 </ul>
             </nav>
@@ -324,236 +271,155 @@ border-radius: 20px;
     </header>
 
     <main class="container">
-        <h1>Detalle de Orden</h1>
-        
-        <?php if (!empty($mensaje)): ?>
-            <div class="message"><?php echo $mensaje; ?></div>
-        <?php endif; ?>
-        
-        <div class="order-detail-container">
-            <div class="order-header">
-                <div>
-                    <div class="order-id">Orden #<?php echo $orden_id; ?></div>
-                    <div>Fecha: <?php echo date('d/m/Y H:i', strtotime($orden['fecha_orden'])); ?></div>
-                </div>
-                
-                <div>
-                    <span class="order-status status-<?php echo $orden['estado']; ?>">
-                        <?php 
-                        switch ($orden['estado']) {
-                            case 'pendiente':
-                                echo 'Pendiente';
-                                break;
-                            case 'procesando':
-                                echo 'En procesamiento';
-                                break;
-                            case 'enviado':
-                                echo 'Enviado';
-                                break;
-                            case 'entregado':
-                                echo 'Entregado';
-                                break;
-                            case 'cancelado':
-                                echo 'Cancelado';
-                                break;
-                            default:
-                                echo ucfirst($orden['estado']);
-                        }
-                        ?>
-                    </span>
-                </div>
+        <div class="admin-container">
+            <div class="admin-sidebar">
+                <ul class="admin-menu">
+                    <li><a href="index.php">Dashboard</a></li>
+                    <li><a href="productos.php">Productos</a></li>
+                    <li><a href="categorias.php">Categorías</a></li>
+                    <li><a href="ordenes.php" class="active">Órdenes</a></li>
+                    <li><a href="usuarios.php">Usuarios</a></li>
+                    <li><a href="resenas.php">Reseñas</a></li>
+                    <li><a href="cupones.php">Cupones</a></li>
+                    <li><a href="devoluciones.php">Devoluciones</a></li>
+                    <li><a href="ventas.php">Informes</a></li>
+                </ul>
             </div>
-            
-            <div class="detail-grid">
-                <div class="detail-box">
-                    <h3>Información del Cliente</h3>
-                    <p>
-                        <strong>Nombre:</strong> <?php echo $orden['nombre'] . ' ' . $orden['apellido']; ?><br>
-                        <strong>Email:</strong> <?php echo $orden['email']; ?><br>
-                        <strong>Teléfono:</strong> <?php echo $orden['telefono']; ?>
-                    </p>
+
+            <div class="admin-content">
+                <div class="orden-header">
+                    <div>
+                        <h2>Orden #<?php echo $orden_id; ?></h2>
+                        <p>Fecha: <?php echo date('d/m/Y H:i', strtotime($orden['fecha_orden'])); ?></p>
+                    </div>
+                    <div>
+                        <span class="orden-estado estado-<?php echo $orden['estado']; ?>">
+                            <?php echo ucfirst($orden['estado']); ?>
+                        </span>
+                        <button onclick="window.print()" class="imprimir-btn">Imprimir</button>
+                    </div>
                 </div>
-                
-                <div class="detail-box">
-                    <h3>Dirección de Envío</h3>
-                    <p>
-                        <?php echo $orden['calle']; ?><br>
-                        <?php echo $orden['ciudad'] . ', ' . $orden['provincia'] . ' ' . $orden['codigo_postal']; ?><br>
-                        <?php if (!empty($orden['referencia'])): ?>
-                            <strong>Referencia:</strong> <?php echo $orden['referencia']; ?>
-                        <?php endif; ?>
-                    </p>
-                </div>
-                
-                <div class="detail-box">
-                    <h3>Método de Pago</h3>
-                    <p>
-                        <?php
-                        switch ($orden['metodo_pago']) {
-                            case 'efectivo':
-                                echo 'Efectivo contra entrega';
-                                break;
-                            case 'transferencia':
-                                echo 'Transferencia bancaria';
-                                break;
-                            case 'yape':
-                                echo 'Yape';
-                                break;
-                            default:
-                                echo $orden['metodo_pago'];
-                        }
-                        ?>
-                    </p>
-                    <?php if ($orden['metodo_pago'] == 'transferencia'): ?>
-                        <p style="margin-top: 10px;">
-                            <strong>Datos de transferencia:</strong><br>
-                            Banco: BCP<br>
-                            Cuenta: 123-456789-0<br>
-                            Titular: ElBaúl S.A.C.
-                        </p>
-                    <?php elseif ($orden['metodo_pago'] == 'yape'): ?>
-                        <p style="margin-top: 10px;">
-                            <strong>Datos de Yape:</strong><br>
-                            Número: 987-654321<br>
-                            Nombre: ElBaúl
-                        </p>
-                    <?php endif; ?>
-                </div>
-                
-                <?php if (!empty($orden['notas'])): ?>
-                    <div class="detail-box">
-                        <h3>Notas del Cliente</h3>
-                        <p><?php echo nl2br($orden['notas']); ?></p>
+
+                <?php if (isset($success_message)): ?>
+                    <div class="alert alert-success">
+                        <?php echo $success_message; ?>
                     </div>
                 <?php endif; ?>
-            </div>
-            
-            <div class="order-items">
-                <h3 class="section-title">Productos</h3>
-                
-                <?php mysqli_data_seek($result_items, 0); ?>
-                <?php while ($item = mysqli_fetch_assoc($result_items)): ?>
-                    <div class="order-item">
-                        <div class="item-image">
+
+                <?php if (isset($error_message)): ?>
+                    <div class="alert alert-error">
+                        <?php echo $error_message; ?>
+                    </div>
+                <?php endif; ?>
+
+                <div class="detalles-orden">
+                    <div class="detalle-seccion">
+                        <h3>Información del Cliente</h3>
+                        <p><strong>Nombre:</strong> <?php echo $orden['nombre'] . ' ' . $orden['apellido']; ?></p>
+                        <p><strong>Email:</strong> <?php echo $orden['email']; ?></p>
+                        <p><strong>Teléfono:</strong> <?php echo $orden['telefono']; ?></p>
+                    </div>
+
+                    <div class="detalle-seccion">
+                        <h3>Información de Envío</h3>
+                        <p><?php echo nl2br($orden['direccion_envio']); ?></p>
+                    </div>
+
+                    <div class="detalle-seccion">
+                        <h3>Información de Pago</h3>
+                        <p><strong>Método de Pago:</strong> 
+                            <?php 
+                            switch($orden['metodo_pago']) {
+                                case 'transferencia':
+                                    echo 'Transferencia Bancaria';
+                                    break;
+                                case 'tarjeta_credito':
+                                    echo 'Tarjeta de Crédito/Débito';
+                                    break;
+                                case 'efectivo':
+                                    echo 'Pago Contra Entrega';
+                                    break;
+                                default:
+                                    echo ucfirst(str_replace('_', ' ', $orden['metodo_pago']));
+                            }
+                            ?>
+                        </p>
+                        <?php if (!empty($orden['comprobante_pago'])): ?>
+                            <p><strong>Comprobante:</strong> <?php echo $orden['comprobante_pago']; ?></p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="orden-items">
+                    <h3>Productos</h3>
+
+                    <?php 
+                    $total = 0;
+                    while ($item = mysqli_fetch_assoc($result_items)): 
+                        $subtotal = $item['precio_unitario'] * $item['cantidad'];
+                        $total += $subtotal;
+                    ?>
+                        <div class="orden-item">
                             <?php if (!empty($item['imagen'])): ?>
-                                <img src="<?php echo $item['imagen']; ?>" alt="<?php echo $item['titulo']; ?>">
+                                <img src="<?php echo $item['imagen']; ?>" alt="<?php echo $item['titulo']; ?>" class="orden-item-imagen">
                             <?php else: ?>
-                                <div style="height: 80px; width: 100%; display: flex; align-items: center; justify-content: center; background-color: #f8f9fa; border: 1px solid #eee;">
+                                <div class="orden-item-imagen" style="display: flex; align-items: center; justify-content: center; background-color: #f8f9fa;">
                                     <span>Sin imagen</span>
                                 </div>
                             <?php endif; ?>
-                        </div>
-                        
-                        <div class="item-details">
-                            <h3><a href="../producto_detalle.php?id=<?php echo $item['producto_id']; ?>" target="_blank"><?php echo $item['titulo']; ?></a></h3>
-                            <p>Cantidad: <?php echo $item['cantidad']; ?></p>
-                        </div>
-                        
-                        <div class="item-price">
-                            <p>S/. <?php echo number_format($item['precio_unitario'] * $item['cantidad'], 2); ?></p>
-                            <small>S/. <?php echo number_format($item['precio_unitario'], 2); ?> c/u</small>
-                        </div>
-                    </div>
-                <?php endwhile; ?>
-                
-                <div class="order-summary">
-                    <div class="summary-row">
-                        <span>Subtotal:</span>
-                        <span>S/. <?php echo number_format($orden['subtotal'], 2); ?></span>
-                    </div>
-                    <div class="summary-row">
-                        <span>IVA (18%):</span>
-                        <span>S/. <?php echo number_format($orden['impuestos'], 2); ?></span>
-                    </div>
-                    <div class="summary-row">
-                        <span>Envío:</span>
-                        <span>S/. 0.00</span>
-                    </div>
-                    <div class="summary-row summary-total">
-                        <span>Total:</span>
-                        <span>S/. <?php echo number_format($orden['total'], 2); ?></span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="update-status">
-                <h3 class="section-title">Actualizar Estado</h3>
-                
-                <form method="POST" action="">
-                    <input type="hidden" name="action" value="update_status">
-                    
-                    <div class="form-group">
-                        <label for="estado">Estado:</label>
-                        <select id="estado" name="estado" required>
-                            <option value="pendiente" <?php echo ($orden['estado'] == 'pendiente') ? 'selected' : ''; ?>>Pendiente</option>
-                            <option value="procesando" <?php echo ($orden['estado'] == 'procesando') ? 'selected' : ''; ?>>En procesamiento</option>
-                            <option value="enviado" <?php echo ($orden['estado'] == 'enviado') ? 'selected' : ''; ?>>Enviado</option>
-                            <option value="entregado" <?php echo ($orden['estado'] == 'entregado') ? 'selected' : ''; ?>>Entregado</option>
-                            <option value="cancelado" <?php echo ($orden['estado'] == 'cancelado') ? 'selected' : ''; ?>>Cancelado</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="comentario">Comentario:</label>
-                        <textarea id="comentario" name="comentario" rows="3"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <button type="submit" class="btn btn-success">Actualizar Estado</button>
-                    </div>
-                </form>
-            </div>
-            
-            <?php if (mysqli_num_rows($result_historial) > 0): ?>
-                <div class="order-timeline">
-                    <h3 class="section-title">Historial de la Orden</h3>
-                    
-                    <?php while ($historial = mysqli_fetch_assoc($result_historial)): ?>
-                        <div class="timeline-item">
-                            <div class="timeline-bullet"></div>
-                            <div class="timeline-date">
-                                <?php echo date('d/m/Y H:i', strtotime($historial['fecha_cambio'])); ?>
+
+                            <div class="orden-item-detalles">
+                                <div class="orden-item-nombre"><?php echo $item['titulo']; ?></div>
+                                <div class="orden-item-precio">S/. <?php echo number_format($item['precio_unitario'], 2); ?> x <?php echo $item['cantidad']; ?></div>
                             </div>
-                            <div class="timeline-content">
-                                <strong>
-                                    <?php 
-                                    switch ($historial['estado']) {
-                                        case 'pendiente':
-                                            echo 'Pendiente';
-                                            break;
-                                        case 'procesando':
-                                            echo 'En procesamiento';
-                                            break;
-                                        case 'enviado':
-                                            echo 'Enviado';
-                                            break;
-                                        case 'entregado':
-                                            echo 'Entregado';
-                                            break;
-                                        case 'cancelado':
-                                            echo 'Cancelado';
-                                            break;
-                                        default:
-                                            echo ucfirst($historial['estado']);
-                                    }
-                                    ?>
-                                </strong>
-                                <?php if (!empty($historial['nombre'])): ?>
-                                    <span>por <?php echo $historial['nombre'] . ' ' . $historial['apellido']; ?></span>
-                                <?php endif; ?>
-                                <?php if (!empty($historial['comentario'])): ?>
-                                    <p><?php echo $historial['comentario']; ?></p>
-                                <?php endif; ?>
+
+                            <div class="orden-item-subtotal">
+                                S/. <?php echo number_format($subtotal, 2); ?>
                             </div>
                         </div>
                     <?php endwhile; ?>
+
+                    <div class="orden-resumen">
+                        <div class="resumen-fila">
+                            <strong>Subtotal:</strong> S/. <?php echo number_format($orden['total'] / 1.18, 2); ?>
+                        </div>
+                        <div class="resumen-fila">
+                            <strong>IGV (18%):</strong> S/. <?php echo number_format($orden['total'] - ($orden['total'] / 1.18), 2); ?>
+                        </div>
+                        <div class="resumen-fila">
+                            <strong>Envío:</strong> Gratis
+                        </div>
+                        <div class="total-fila">
+                            <strong>Total:</strong> S/. <?php echo number_format($orden['total'], 2); ?>
+                        </div>
+                    </div>
                 </div>
-            <?php endif; ?>
-        </div>
-        
-        <div class="actions">
-            <a href="ordenes.php" class="btn">Volver a Órdenes</a>
-            <a href="orden_imprimir.php?id=<?php echo $orden_id; ?>" class="btn" target="_blank">Imprimir Orden</a>
+
+                <div class="cambiar-estado-form">
+                    <h3>Actualizar Estado</h3>
+                    <form method="post" action="">
+                        <div class="form-group">
+                            <label for="estado" class="form-label">Estado de la Orden:</label>
+                            <select id="estado" name="estado" class="form-select">
+                                <option value="pendiente" <?php echo $orden['estado'] === 'pendiente' ? 'selected' : ''; ?>>Pendiente</option>
+                                <option value="pagada" <?php echo $orden['estado'] === 'pagada' ? 'selected' : ''; ?>>Pagada</option>
+                                <option value="enviada" <?php echo $orden['estado'] === 'enviada' ? 'selected' : ''; ?>>Enviada</option>
+                                <option value="entregada" <?php echo $orden['estado'] === 'entregada' ? 'selected' : ''; ?>>Entregada</option>
+                                <option value="cancelada" <?php echo $orden['estado'] === 'cancelada' ? 'selected' : ''; ?>>Cancelada</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <button type="submit" name="actualizar_estado" class="btn">Actualizar Estado</button>
+                        </div>
+                    </form>
+                </div>
+
+                <div class="botones-accion">
+                    <a href="ordenes.php" class="btn">Volver a la Lista</a>
+                    <a href="orden_imprimir.php?id=<?php echo $orden_id; ?>" class="btn" target="_blank">Ver Factura</a>
+                </div>
+            </div>
         </div>
     </main>
 
